@@ -341,7 +341,7 @@ export default function App() {
             history.push({ role: "user", content: userMsg });
 
             const baseUrl = import.meta.env.VITE_API_BASE_URL;
-            const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+            const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
 
             let reply = "";
             if (baseUrl) {
@@ -353,13 +353,8 @@ export default function App() {
                 const data = await res.json();
                 reply = data.reply || "I'm here with you.";
             } else if (apiKey) {
-                const res = await fetch("https://api.anthropic.com/v1/messages", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-                    body: JSON.stringify({
-                        model: "claude-opus-4-5",
-                        max_tokens: 512,
-                        system: `You are a compassionate AI companion for a person living with ALS or another neurodegenerative disorder.
+                // System instructions for the model
+                const systemPrompt = `You are a compassionate AI companion for a person living with ALS or another neurodegenerative disorder.
 Your role:
 - Provide warm, genuine emotional support and companionship
 - Never minimize their challenges, but gently encourage resilience and dignity
@@ -369,14 +364,29 @@ Your role:
 - Keep responses very concise (2-3 sentences max) since reading may be tiring
 - If they express severe distress or safety concerns, gently encourage them to use the Alert tab
 You are NOT a medical advisor. Always recommend consulting their care team for medical questions.
-The patient's name is: ${profile?.name || "Friend"}.`,
-                        messages: history,
+The patient's name is: ${profile?.name || "Friend"}.`;
+
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [
+                            { role: "user", parts: [{ text: `SYSTEM INSTRUCTIONS: ${systemPrompt}` }] },
+                            ...history.map(m => ({
+                                role: m.role === "assistant" ? "model" : "user",
+                                parts: [{ text: m.content }]
+                            }))
+                        ],
+                        generationConfig: {
+                            maxOutputTokens: 512,
+                            temperature: 0.7,
+                        }
                     }),
                 });
                 const data = await res.json();
-                reply = data.content?.[0]?.text || "I'm here with you. Could you tell me more?";
+                reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here with you. Could you tell me more?";
             } else {
-                reply = "To enable the AI companion, please add your Anthropic API key to the .env.local file. See .env.example for instructions.";
+                reply = "To enable the AI companion, please add your Google API key to the .env.local file. See .env.example for instructions.";
             }
 
             setMessages(prev => [...prev, { role: "ai", text: reply }]);
